@@ -7,14 +7,14 @@ namespace ContainerBenchmark
 {
     /// <summary>
     /// int 求和 Job（A8 遍历用）：单个 Burst IJob 顺序遍历并写回结果。
-    /// 结果写回单元素容器，天然逃逸防优化；调度前需把 Result[0] 清零。
+    /// 结果写回单元素 NativeArray，天然逃逸防优化；调度前需把 Result[0] 清零。
     /// 避免所有 worker 争用同一个原子变量，让 A8 表示遍历/调度成本而非原子串行化。
     /// </summary>
     [BurstCompile]
     public struct SumIntJob : IJob
     {
         [ReadOnly] public NativeArray<int> Input;
-        public NativeList<long> Result; // 单元素
+        public NativeArray<long> Result;
 
         public void Execute()
         {
@@ -33,7 +33,7 @@ namespace ContainerBenchmark
     public struct SumVector3SequentialJob : IJob
     {
         [ReadOnly] public NativeArray<Vector3> Input;
-        public NativeList<Vector3> Result;
+        public NativeArray<Vector3> Result;
 
         public void Execute()
         {
@@ -46,13 +46,13 @@ namespace ContainerBenchmark
 
     /// <summary>
     /// NativeHashMap Vector3 求和 Job（B7 Native）：直接遍历 ReadOnly 视图，
-    /// 不物化 value 数组，结果写回预分配的单元素 NativeList。
+    /// 不物化 value 数组，结果写回预分配的单元素 NativeArray。
     /// </summary>
     [BurstCompile]
     public struct SumNativeHashMapVector3Job : IJob
     {
         [ReadOnly] public NativeHashMap<HashKey, Vector3>.ReadOnly Input;
-        public NativeList<Vector3> Result;
+        public NativeArray<Vector3> Result;
 
         public void Execute()
         {
@@ -71,7 +71,7 @@ namespace ContainerBenchmark
     public struct SumHashKeySequentialJob : IJob
     {
         [ReadOnly] public NativeArray<HashKey> Input;
-        public NativeList<long> Result;
+        public NativeArray<long> Result;
 
         public void Execute()
         {
@@ -84,13 +84,13 @@ namespace ContainerBenchmark
 
     /// <summary>
     /// NativeParallelHashSet 求和 Job（C6 Native）：直接遍历 ReadOnly 视图，
-    /// 不物化 key 数组，结果写回预分配的单元素 NativeList。
+    /// 不物化 key 数组，结果写回预分配的单元素 NativeArray。
     /// </summary>
     [BurstCompile]
     public struct SumNativeHashSetJob : IJob
     {
         [ReadOnly] public NativeParallelHashSet<HashKey>.ReadOnly Input;
-        public NativeList<long> Result;
+        public NativeArray<long> Result;
 
         public void Execute()
         {

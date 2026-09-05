@@ -9,6 +9,7 @@ The benchmark harness and report pipeline are implemented. Formal dual-channel m
 ## Requirements
 
 - Unity `6000.5.9f1`
+- Unity Collections Core package `6.5.0` (Editor-bundled, resolved as `builtin`)
 - Windows x64 IL2CPP build support
 - PowerShell 5.1 or newer for the formal matrix runner
 
@@ -63,7 +64,8 @@ The two channels must run sequentially. Running them concurrently invalidates ti
 - IL2CPP Player only
 - one warm-up pass plus ten steady-state samples
 - median is the primary timing statistic; mean and nearest-rank p95 are retained
-- setup, validation, disposal, UI and export stay outside the timed region
+- setup, per-pass reset, validation, disposal, UI and export stay outside the timed region
+- mutating cases rebuild and release their fixture every pass; explicitly read-only cases build once, reset outside timing for each pass, and release once after the 1+10 sequence
 - every result validates its observable outcome
 - timing comes only from the Release Timing channel; GC allocation comes only from the Development GC channel
 - final reports are assembled only when all six shard artifacts, checkpoints, hashes, package snapshots and build GUIDs agree

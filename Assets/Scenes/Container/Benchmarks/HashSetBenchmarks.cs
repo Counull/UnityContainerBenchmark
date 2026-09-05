@@ -119,7 +119,7 @@ namespace ContainerBenchmark
 
     // ==================== C2 命中查询 ====================
 
-    public sealed class HashSetHitQueryCase : BenchmarkCaseBase
+    public sealed class HashSetHitQueryCase : ReusableReadOnlyBenchmarkCaseBase
     {
         private HashKey[] _keys;
         private HashSet<HashKey> _set;
@@ -165,7 +165,7 @@ namespace ContainerBenchmark
         }
     }
 
-    public sealed class NativeHashSetHitQueryCase : BenchmarkCaseBase
+    public sealed class NativeHashSetHitQueryCase : ReusableReadOnlyBenchmarkCaseBase
     {
         private HashKey[] _keys;
         private NativeParallelHashSet<HashKey> _set;
@@ -180,7 +180,7 @@ namespace ContainerBenchmark
         {
             Checksum.Reset();
             _keys = HashKeyFactory.CreateKeys(Scale, Collision, BenchmarkConfig.DefaultSeed);
-            _set = new NativeParallelHashSet<HashKey>(Scale, Allocator.TempJob);
+            _set = new NativeParallelHashSet<HashKey>(Scale, Allocator.Persistent);
             for (int i = 0; i < Scale; i++)
                 _set.Add(_keys[i]);
         }
@@ -214,7 +214,7 @@ namespace ContainerBenchmark
 
     // ==================== C3 未命中查询 ====================
 
-    public sealed class HashSetMissQueryCase : BenchmarkCaseBase
+    public sealed class HashSetMissQueryCase : ReusableReadOnlyBenchmarkCaseBase
     {
         private HashKey[] _keys;
         private HashKey[] _missKeys;
@@ -263,7 +263,7 @@ namespace ContainerBenchmark
         }
     }
 
-    public sealed class NativeHashSetMissQueryCase : BenchmarkCaseBase
+    public sealed class NativeHashSetMissQueryCase : ReusableReadOnlyBenchmarkCaseBase
     {
         private HashKey[] _keys;
         private HashKey[] _missKeys;
@@ -280,7 +280,7 @@ namespace ContainerBenchmark
             Checksum.Reset();
             _keys = HashKeyFactory.CreateKeys(Scale, Collision, BenchmarkConfig.DefaultSeed);
             _missKeys = HashKeyFactory.CreateMissKeys(Scale, Collision, BenchmarkConfig.DefaultSeed);
-            _set = new NativeParallelHashSet<HashKey>(Scale, Allocator.TempJob);
+            _set = new NativeParallelHashSet<HashKey>(Scale, Allocator.Persistent);
             for (int i = 0; i < Scale; i++)
                 _set.Add(_keys[i]);
         }
@@ -400,7 +400,7 @@ namespace ContainerBenchmark
 
     // ==================== C5 遍历 ====================
 
-    public sealed class HashSetTraverseCase : BenchmarkCaseBase
+    public sealed class HashSetTraverseCase : ReusableReadOnlyBenchmarkCaseBase
     {
         private HashSet<HashKey> _set;
 
@@ -441,7 +441,7 @@ namespace ContainerBenchmark
         }
     }
 
-    public sealed class NativeHashSetTraverseCase : BenchmarkCaseBase
+    public sealed class NativeHashSetTraverseCase : ReusableReadOnlyBenchmarkCaseBase
     {
         private NativeParallelHashSet<HashKey> _set;
 
@@ -455,7 +455,7 @@ namespace ContainerBenchmark
         {
             Checksum.Reset();
             var keys = HashKeyFactory.CreateKeys(Scale, Collision, BenchmarkConfig.DefaultSeed);
-            _set = new NativeParallelHashSet<HashKey>(Scale, Allocator.TempJob);
+            _set = new NativeParallelHashSet<HashKey>(Scale, Allocator.Persistent);
             for (int i = 0; i < Scale; i++)
                 _set.Add(keys[i]);
         }
@@ -485,11 +485,11 @@ namespace ContainerBenchmark
 
     // ==================== C6 Job 遍历求和 ====================
 
-    public sealed class HashSetJobTraverseCase : BenchmarkCaseBase
+    public sealed class HashSetJobTraverseCase : ReusableReadOnlyBenchmarkCaseBase
     {
         private HashSet<HashKey> _set;
         private NativeArray<HashKey> _input;
-        private NativeList<long> _result;
+        private NativeArray<long> _result;
 
         public HashSetJobTraverseCase(int scale, CollisionProfile collision)
             : base("HashSet", false, ContainerFamily.HashSet, "C6", "Job遍历求和", true,
@@ -504,9 +504,14 @@ namespace ContainerBenchmark
             _set = new HashSet<HashKey>(Scale);
             for (int i = 0; i < Scale; i++)
                 _set.Add(keys[i]);
-            _input = new NativeArray<HashKey>(Scale, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
-            _result = new NativeList<long>(1, Allocator.TempJob);
-            _result.Add(0);
+            _input = new NativeArray<HashKey>(Scale, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+            _result = new NativeArray<long>(1, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+        }
+
+        public override void ResetForPass()
+        {
+            base.ResetForPass();
+            _result[0] = 0L;
         }
 
         public override void RunOnePass()
@@ -516,7 +521,6 @@ namespace ContainerBenchmark
             foreach (HashKey key in _set)
                 _input[index++] = key;
 
-            _result[0] = 0;
             new SumHashKeySequentialJob { Input = _input, Result = _result }
                 .Schedule().Complete();
             Checksum.AddLong(_result[0]);
@@ -540,10 +544,10 @@ namespace ContainerBenchmark
         }
     }
 
-    public sealed class NativeHashSetJobTraverseCase : BenchmarkCaseBase
+    public sealed class NativeHashSetJobTraverseCase : ReusableReadOnlyBenchmarkCaseBase
     {
         private NativeParallelHashSet<HashKey> _set;
-        private NativeList<long> _result;
+        private NativeArray<long> _result;
 
         public NativeHashSetJobTraverseCase(int scale, CollisionProfile collision)
             : base("NativeParallelHashSet", true, ContainerFamily.HashSet, "C6", "Job遍历求和", true,
@@ -555,17 +559,21 @@ namespace ContainerBenchmark
         {
             Checksum.Reset();
             var keys = HashKeyFactory.CreateKeys(Scale, Collision, BenchmarkConfig.DefaultSeed);
-            _set = new NativeParallelHashSet<HashKey>(Scale, Allocator.TempJob);
+            _set = new NativeParallelHashSet<HashKey>(Scale, Allocator.Persistent);
             for (int i = 0; i < Scale; i++)
                 _set.Add(keys[i]);
-            _result = new NativeList<long>(1, Allocator.TempJob);
-            _result.Add(0);
+            _result = new NativeArray<long>(1, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+        }
+
+        public override void ResetForPass()
+        {
+            base.ResetForPass();
+            _result[0] = 0L;
         }
 
         public override void RunOnePass()
         {
             // Native 容器零拷贝：ReadOnly 视图由单个 Burst Job 直接遍历。
-            _result[0] = 0;
             new SumNativeHashSetJob { Input = _set.AsReadOnly(), Result = _result }
                 .Schedule().Complete();
             Checksum.AddLong(_result[0]);

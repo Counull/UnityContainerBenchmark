@@ -59,12 +59,15 @@ $expectedCaseCounts = [ordered]@{
 }
 
 $expectedPackages = [ordered]@{
-    collectionsManifestRequest = '2.5.7'
+    collectionsManifestRequest = '6.5.0'
     collectionsResolvedVersion = '6.5.0'
+    collectionsResolvedSource  = 'builtin'
     burstResolvedVersion        = '1.8.30'
     mathematicsResolvedVersion  = '1.4.0'
     packagesLockSha256          = '5496DF13106EE5FE221DD76C28BE21048FA43163AF6C657FF034EE7FE2B779E6'
 }
+$expectedUnityVersion = '6000.5.9f1'
+$expectedUnityRevision = 'b57deb96f08d'
 $statisticTolerance = 1e-9
 $matrixMutex = $null
 $matrixMutexOwned = $false
@@ -301,7 +304,8 @@ function Test-BenchmarkArtifacts {
         'checkpointEnabled', 'checkpointFile', 'totalCases', 'completedCases',
         'failedCases', 'skippedCases', 'gcMetricCalibrated', 'environmentError',
         'startedUtc', 'endedUtc', 'buildGuid', 'buildKind', 'scriptingBackend',
-        'collectionsManifestRequest', 'collectionsResolvedVersion', 'burstResolvedVersion',
+        'unityVersion', 'unityRevision',
+        'collectionsManifestRequest', 'collectionsResolvedVersion', 'collectionsResolvedSource', 'burstResolvedVersion',
         'mathematicsResolvedVersion', 'packagesLockSha256', 'results'
     )
     foreach ($propertyName in $requiredSuiteProperties) {
@@ -313,6 +317,8 @@ function Test-BenchmarkArtifacts {
     Assert-Condition ($suite.selectionPolicy -ceq 'practical-capped-v2') "[$($Plan.Shard)] selectionPolicy 应为 practical-capped-v2，实际为 '$($suite.selectionPolicy)'"
     Assert-Condition ($suite.benchmarkShard -ceq $Plan.Shard) "[$($Plan.Shard)] JSON benchmarkShard 不匹配: '$($suite.benchmarkShard)'"
     Assert-Condition ($suite.scriptingBackend -ceq 'IL2CPP') "[$($Plan.Shard)] scriptingBackend 应为 IL2CPP，实际为 '$($suite.scriptingBackend)'"
+    Assert-Condition ($suite.unityVersion -ceq $script:expectedUnityVersion) "[$($Plan.Shard)] Unity version 不匹配: '$($suite.unityVersion)'"
+    Assert-Condition ($suite.unityRevision -ceq $script:expectedUnityRevision) "[$($Plan.Shard)] Unity revision 不匹配: '$($suite.unityRevision)'"
     Assert-Condition (-not [string]::IsNullOrWhiteSpace([string]$suite.buildGuid)) "[$($Plan.Shard)] buildGuid 为空"
     foreach ($packageField in $script:expectedPackages.Keys) {
         Assert-Condition ([string]$suite.$packageField -ceq [string]$script:expectedPackages[$packageField]) "[$($Plan.Shard)] $packageField 不匹配: '$($suite.$packageField)'"
@@ -572,6 +578,10 @@ try {
         playerSha256 = $playerSha256
         runnerSha256 = $runnerSha256
         buildGuid = $uniqueBuildGuids[0]
+        environmentSnapshot = [ordered]@{
+            unityVersion = $expectedUnityVersion
+            unityRevision = $expectedUnityRevision
+        }
         packageSnapshot = $expectedPackages
         totalCases = $totalCases
         totalRows = $totalRows

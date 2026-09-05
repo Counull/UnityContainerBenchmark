@@ -184,7 +184,7 @@ namespace ContainerBenchmark
 
     // ==================== B2 命中查询 ====================
 
-    public sealed class DictHitQueryCase : BenchmarkCaseBase
+    public sealed class DictHitQueryCase : ReusableReadOnlyBenchmarkCaseBase
     {
         private HashKey[] _keys;
         private Dictionary<HashKey, Vector3> _dict;
@@ -233,7 +233,7 @@ namespace ContainerBenchmark
         }
     }
 
-    public sealed class NativeMapHitQueryCase : BenchmarkCaseBase
+    public sealed class NativeMapHitQueryCase : ReusableReadOnlyBenchmarkCaseBase
     {
         private HashKey[] _keys;
         private NativeHashMap<HashKey, Vector3> _map;
@@ -248,7 +248,7 @@ namespace ContainerBenchmark
         {
             Checksum.Reset();
             _keys = HashKeyFactory.CreateKeys(Scale, Collision, BenchmarkConfig.DefaultSeed);
-            _map = new NativeHashMap<HashKey, Vector3>(Scale, Allocator.TempJob);
+            _map = new NativeHashMap<HashKey, Vector3>(Scale, Allocator.Persistent);
             for (int i = 0; i < Scale; i++)
                 _map.TryAdd(_keys[i], DictHelpers.ValueOf(_keys[i].id));
         }
@@ -285,7 +285,7 @@ namespace ContainerBenchmark
 
     // ==================== B3 未命中查询 ====================
 
-    public sealed class DictMissQueryCase : BenchmarkCaseBase
+    public sealed class DictMissQueryCase : ReusableReadOnlyBenchmarkCaseBase
     {
         private HashKey[] _keys;
         private HashKey[] _missKeys;
@@ -334,7 +334,7 @@ namespace ContainerBenchmark
         }
     }
 
-    public sealed class NativeMapMissQueryCase : BenchmarkCaseBase
+    public sealed class NativeMapMissQueryCase : ReusableReadOnlyBenchmarkCaseBase
     {
         private HashKey[] _keys;
         private HashKey[] _missKeys;
@@ -351,7 +351,7 @@ namespace ContainerBenchmark
             Checksum.Reset();
             _keys = HashKeyFactory.CreateKeys(Scale, Collision, BenchmarkConfig.DefaultSeed);
             _missKeys = HashKeyFactory.CreateMissKeys(Scale, Collision, BenchmarkConfig.DefaultSeed);
-            _map = new NativeHashMap<HashKey, Vector3>(Scale, Allocator.TempJob);
+            _map = new NativeHashMap<HashKey, Vector3>(Scale, Allocator.Persistent);
             for (int i = 0; i < Scale; i++)
                 _map.TryAdd(_keys[i], DictHelpers.ValueOf(_keys[i].id));
         }
@@ -592,7 +592,7 @@ namespace ContainerBenchmark
 
     // ==================== B6 遍历 ====================
 
-    public sealed class DictTraverseCase : BenchmarkCaseBase
+    public sealed class DictTraverseCase : ReusableReadOnlyBenchmarkCaseBase
     {
         private Dictionary<HashKey, Vector3> _dict;
 
@@ -635,7 +635,7 @@ namespace ContainerBenchmark
         }
     }
 
-    public sealed class NativeMapTraverseCase : BenchmarkCaseBase
+    public sealed class NativeMapTraverseCase : ReusableReadOnlyBenchmarkCaseBase
     {
         private NativeHashMap<HashKey, Vector3> _map;
 
@@ -649,7 +649,7 @@ namespace ContainerBenchmark
         {
             Checksum.Reset();
             var keys = HashKeyFactory.CreateKeys(Scale, Collision, BenchmarkConfig.DefaultSeed);
-            _map = new NativeHashMap<HashKey, Vector3>(Scale, Allocator.TempJob);
+            _map = new NativeHashMap<HashKey, Vector3>(Scale, Allocator.Persistent);
             for (int i = 0; i < Scale; i++)
                 _map.TryAdd(keys[i], DictHelpers.ValueOf(keys[i].id));
         }
@@ -681,11 +681,11 @@ namespace ContainerBenchmark
 
     // ==================== B7 Job 遍历求和 ====================
 
-    public sealed class DictJobTraverseCase : BenchmarkCaseBase
+    public sealed class DictJobTraverseCase : ReusableReadOnlyBenchmarkCaseBase
     {
         private Dictionary<HashKey, Vector3> _dict;
         private NativeArray<Vector3> _input;
-        private NativeList<Vector3> _result;
+        private NativeArray<Vector3> _result;
 
         public DictJobTraverseCase(int scale, CollisionProfile collision)
             : base("Dictionary", false, ContainerFamily.Dictionary, "B7", "Job遍历求和", true,
@@ -700,9 +700,14 @@ namespace ContainerBenchmark
             _dict = new Dictionary<HashKey, Vector3>(Scale);
             for (int i = 0; i < Scale; i++)
                 _dict.TryAdd(keys[i], DictHelpers.ValueOf(keys[i].id));
-            _input = new NativeArray<Vector3>(Scale, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
-            _result = new NativeList<Vector3>(1, Allocator.TempJob);
-            _result.Add(Vector3.zero);
+            _input = new NativeArray<Vector3>(Scale, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+            _result = new NativeArray<Vector3>(1, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+        }
+
+        public override void ResetForPass()
+        {
+            base.ResetForPass();
+            _result[0] = Vector3.zero;
         }
 
         public override void RunOnePass()
@@ -714,7 +719,6 @@ namespace ContainerBenchmark
             foreach (KeyValuePair<HashKey, Vector3> pair in _dict)
                 _input[index++] = pair.Value;
 
-            _result[0] = Vector3.zero;
             new SumVector3SequentialJob { Input = _input, Result = _result }
                 .Schedule().Complete();
             Checksum.AddVector(_result[0]);
@@ -740,10 +744,10 @@ namespace ContainerBenchmark
         }
     }
 
-    public sealed class NativeMapJobTraverseCase : BenchmarkCaseBase
+    public sealed class NativeMapJobTraverseCase : ReusableReadOnlyBenchmarkCaseBase
     {
         private NativeHashMap<HashKey, Vector3> _map;
-        private NativeList<Vector3> _result;
+        private NativeArray<Vector3> _result;
 
         public NativeMapJobTraverseCase(int scale, CollisionProfile collision)
             : base("NativeHashMap", true, ContainerFamily.Dictionary, "B7", "Job遍历求和", true,
@@ -755,17 +759,21 @@ namespace ContainerBenchmark
         {
             Checksum.Reset();
             var keys = HashKeyFactory.CreateKeys(Scale, Collision, BenchmarkConfig.DefaultSeed);
-            _map = new NativeHashMap<HashKey, Vector3>(Scale, Allocator.TempJob);
+            _map = new NativeHashMap<HashKey, Vector3>(Scale, Allocator.Persistent);
             for (int i = 0; i < Scale; i++)
                 _map.TryAdd(keys[i], DictHelpers.ValueOf(keys[i].id));
-            _result = new NativeList<Vector3>(1, Allocator.TempJob);
-            _result.Add(Vector3.zero);
+            _result = new NativeArray<Vector3>(1, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+        }
+
+        public override void ResetForPass()
+        {
+            base.ResetForPass();
+            _result[0] = Vector3.zero;
         }
 
         public override void RunOnePass()
         {
             // Native 容器零拷贝：ReadOnly 视图由单个 Burst Job 直接遍历。
-            _result[0] = Vector3.zero;
             new SumNativeHashMapVector3Job { Input = _map.AsReadOnly(), Result = _result }
                 .Schedule().Complete();
             Checksum.AddVector(_result[0]);
@@ -880,7 +888,7 @@ namespace ContainerBenchmark
         }
     }
 
-    public sealed class DictStringHitQueryCase : BenchmarkCaseBase
+    public sealed class DictStringHitQueryCase : ReusableReadOnlyBenchmarkCaseBase
     {
         private string[] _keys;
         private Dictionary<string, int> _dict;
@@ -930,7 +938,7 @@ namespace ContainerBenchmark
         }
     }
 
-    public sealed class NativeMapStringHitQueryCase : BenchmarkCaseBase
+    public sealed class NativeMapStringHitQueryCase : ReusableReadOnlyBenchmarkCaseBase
     {
         private FixedString64Bytes[] _keys;
         private NativeHashMap<FixedString64Bytes, int> _map;
@@ -948,7 +956,7 @@ namespace ContainerBenchmark
         {
             Checksum.Reset();
             _keys = HashKeyFactory.CreateFixedStringKeys(Scale, BenchmarkConfig.DefaultSeed);
-            _map = new NativeHashMap<FixedString64Bytes, int>(Scale, Allocator.TempJob);
+            _map = new NativeHashMap<FixedString64Bytes, int>(Scale, Allocator.Persistent);
             for (int i = 0; i < Scale; i++)
                 _map.TryAdd(_keys[i], i);
         }
@@ -981,7 +989,7 @@ namespace ContainerBenchmark
         }
     }
 
-    public sealed class DictStringMissQueryCase : BenchmarkCaseBase
+    public sealed class DictStringMissQueryCase : ReusableReadOnlyBenchmarkCaseBase
     {
         private string[] _keys;
         private string[] _missKeys;
@@ -1033,7 +1041,7 @@ namespace ContainerBenchmark
         }
     }
 
-    public sealed class NativeMapStringMissQueryCase : BenchmarkCaseBase
+    public sealed class NativeMapStringMissQueryCase : ReusableReadOnlyBenchmarkCaseBase
     {
         private FixedString64Bytes[] _keys;
         private FixedString64Bytes[] _missKeys;
@@ -1053,7 +1061,7 @@ namespace ContainerBenchmark
             Checksum.Reset();
             _keys = HashKeyFactory.CreateFixedStringKeys(Scale, BenchmarkConfig.DefaultSeed);
             _missKeys = HashKeyFactory.CreateFixedStringKeys(Scale, BenchmarkConfig.DefaultSeed + 101);
-            _map = new NativeHashMap<FixedString64Bytes, int>(Scale, Allocator.TempJob);
+            _map = new NativeHashMap<FixedString64Bytes, int>(Scale, Allocator.Persistent);
             for (int i = 0; i < Scale; i++)
                 _map.TryAdd(_keys[i], i);
         }
@@ -1086,7 +1094,7 @@ namespace ContainerBenchmark
         }
     }
 
-    public sealed class DictStringTraverseCase : BenchmarkCaseBase
+    public sealed class DictStringTraverseCase : ReusableReadOnlyBenchmarkCaseBase
     {
         private Dictionary<string, int> _dict;
 
@@ -1130,7 +1138,7 @@ namespace ContainerBenchmark
         }
     }
 
-    public sealed class NativeMapStringTraverseCase : BenchmarkCaseBase
+    public sealed class NativeMapStringTraverseCase : ReusableReadOnlyBenchmarkCaseBase
     {
         private NativeHashMap<FixedString64Bytes, int> _map;
 
@@ -1147,7 +1155,7 @@ namespace ContainerBenchmark
         {
             Checksum.Reset();
             var keys = HashKeyFactory.CreateFixedStringKeys(Scale, BenchmarkConfig.DefaultSeed);
-            _map = new NativeHashMap<FixedString64Bytes, int>(Scale, Allocator.TempJob);
+            _map = new NativeHashMap<FixedString64Bytes, int>(Scale, Allocator.Persistent);
             for (int i = 0; i < Scale; i++)
                 _map.TryAdd(keys[i], i);
         }

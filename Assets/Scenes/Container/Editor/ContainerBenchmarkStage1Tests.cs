@@ -163,6 +163,11 @@ public static class ContainerBenchmarkStage1Tests
         var suite = new BenchmarkSuiteResult
         {
             unityVersion = Application.unityVersion,
+            unityRevision = BenchmarkEnvironmentContract.RecordedUnityRevision,
+            collectionsManifestRequest = BenchmarkEnvironmentContract.CollectionsManifestVersion,
+            collectionsResolvedVersion = BenchmarkEnvironmentContract.CollectionsResolvedVersion,
+            collectionsResolvedSource = BenchmarkEnvironmentContract.RecordedCollectionsResolvedSource,
+            packagesLockSha256 = BenchmarkEnvironmentContract.PackagesLockSha256,
             startedUtc = DateTime.UtcNow.ToString("O"),
             jobEnabled = true,
         };
@@ -223,6 +228,9 @@ public static class ContainerBenchmarkStage1Tests
             json = suite.ToJson();
             BenchmarkSuiteResult restored = BenchmarkSuiteResult.FromJson(json);
             jsonOk = restored != null && restored.results != null && restored.results.Count == 2
+                     && restored.unityRevision == BenchmarkEnvironmentContract.UnityRevision
+                     && restored.collectionsResolvedSource == BenchmarkEnvironmentContract.CollectionsResolvedSource
+                     && restored.packagesLockSha256 == BenchmarkEnvironmentContract.PackagesLockSha256
                      && restored.results[0].sampleMs != null && restored.results[0].sampleMs.Length == 10
                      && restored.results[0].validated
                      && restored.results[0].gcBytesAvailable

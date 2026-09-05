@@ -40,6 +40,51 @@ namespace ContainerBenchmark{
         };
     }
 
+    /// <summary>
+    /// 正式证据环境的单一契约源。构建入口会从真实 Editor 与 lock 文件校验这些值，
+    /// 并只为通过校验的 Player 注入 VerifiedScriptingDefine；非正式构建不得自报已验证环境。
+    /// </summary>
+    public static class BenchmarkEnvironmentContract
+    {
+        public const string UnityVersion = "6000.5.9f1";
+        public const string UnityRevision = "b57deb96f08d";
+        public const string FullUnityVersion = "6000.5.9f1 (b57deb96f08d)";
+        public const string VerifiedScriptingDefine =
+            "CONTAINER_BENCHMARK_ENV_6000_5_9F1_B57DEB96F08D";
+
+        public const string CollectionsManifestVersion = "6.5.0";
+        public const string CollectionsResolvedVersion = "6.5.0";
+        public const string CollectionsResolvedSource = "builtin";
+        public const string BurstResolvedVersion = "1.8.30";
+        public const string MathematicsResolvedVersion = "1.4.0";
+        public const string PackagesLockSha256 =
+            "5496DF13106EE5FE221DD76C28BE21048FA43163AF6C657FF034EE7FE2B779E6";
+
+        public static string RecordedUnityRevision
+        {
+            get
+            {
+#if UNITY_EDITOR || CONTAINER_BENCHMARK_ENV_6000_5_9F1_B57DEB96F08D
+                return UnityRevision;
+#else
+                return "unverified";
+#endif
+            }
+        }
+
+        public static string RecordedCollectionsResolvedSource
+        {
+            get
+            {
+#if UNITY_EDITOR || CONTAINER_BENCHMARK_ENV_6000_5_9F1_B57DEB96F08D
+                return CollectionsResolvedSource;
+#else
+                return "unverified";
+#endif
+            }
+        }
+    }
+
     /// <summary>哈希碰撞档位。</summary>
     public enum CollisionProfile
     {

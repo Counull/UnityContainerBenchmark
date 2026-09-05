@@ -75,7 +75,7 @@ namespace ContainerBenchmark
         /// <summary>校验描述（通过说明或失败原因）。</summary>
         public string validateDesc;
 
-        /// <summary>语义差异标注（字符串专项用：引用类型 vs 定长 64 字节、哈希算法不同等）。</summary>
+        /// <summary>语义差异标注（字符串语义、容量/存储布局、可选能力等不可完全对称因素）。</summary>
         public string semanticNote;
 
         /// <summary>是否因当前环境或实现明确不支持而跳过。</summary>
@@ -94,8 +94,9 @@ namespace ContainerBenchmark
         /// <summary>套件名称。</summary>
         public string suiteName = "ContainerBenchmark";
 
-        /// <summary>Unity 版本。</summary>
+        /// <summary>Unity 版本与正式构建入口校验过的 Editor revision。</summary>
         public string unityVersion;
+        public string unityRevision;
 
         /// <summary>开始时间（UTC，ISO8601）。</summary>
         public string startedUtc;
@@ -112,11 +113,12 @@ namespace ContainerBenchmark
         public string buildKind;
 
         /// <summary>
-        /// 包解析快照。manifest 中请求的 Collections 版本与 Unity 实际解析的 builtin
-        /// 版本必须同时保留；packagesLockSha256 用于证明双通道来自同一依赖图。
+        /// 包解析快照。manifest 请求、实际解析版本/来源必须同时保留；
+        /// packagesLockSha256 用于证明双通道来自同一依赖图。
         /// </summary>
         public string collectionsManifestRequest;
         public string collectionsResolvedVersion;
+        public string collectionsResolvedSource;
         public string burstResolvedVersion;
         public string mathematicsResolvedVersion;
         public string packagesLockSha256;

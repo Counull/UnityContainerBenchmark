@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Runtime.ExceptionServices;
 using System.Text;
 using Unity.Profiling;
 using UnityEngine;
@@ -47,7 +48,7 @@ namespace ContainerBenchmark
     /// 容器性能测试主控（阶段 2）：
     /// 配置解析（场景序列化字段 + 命令行 -autoRun / -benchmarkOutput）→
     /// 用例清单构建（容器×操作×规模×类型×碰撞×Job 笛卡尔积，默认全开可反选）→
-    /// 执行循环（Setup → [计时区] RunOnePass → [计时结束] → Validate → Teardown，预热 1 次 + 采样 10 次）→
+    /// 执行循环（可变用例逐 pass 建销；显式只读用例复用 fixture；计时区始终只含 RunOnePass，预热 1 次 + 采样 10 次）→
     /// 统计（中位数主指标 / 均值 / p95 / 总耗时 / nsPerOp / GC 分配）→
     /// 聚合 BenchmarkSuiteResult 落盘 JSON（失败容错：单用例失败不中断全量）。
     /// 用例发现走 BenchmarkCaseCatalog 静态注册（阶段 1 契约），不硬编码具体用例类。
@@ -491,6 +492,16 @@ namespace ContainerBenchmark
             {
                 return "ContainerBenchmark Player 只接受 IL2CPP；Mono 结果不可进入正式报告";
             }
+            if (IsAutoRun
+                && (!string.Equals(Application.unityVersion, BenchmarkEnvironmentContract.UnityVersion,
+                        StringComparison.Ordinal)
+                    || !string.Equals(BenchmarkEnvironmentContract.RecordedUnityRevision,
+                        BenchmarkEnvironmentContract.UnityRevision, StringComparison.Ordinal)
+                    || !string.Equals(BenchmarkEnvironmentContract.RecordedCollectionsResolvedSource,
+                        BenchmarkEnvironmentContract.CollectionsResolvedSource, StringComparison.Ordinal)))
+            {
+                return "正式自动运行必须使用通过独立构建入口验证的 Unity Editor revision 与 builtin Collections 环境";
+            }
             if (Debug.isDebugBuild && _benchmarkTimingOnly)
             {
                 return "IL2CPP Development Player 是 GC 测量通道，禁止 -benchmarkTimingOnly";
@@ -541,16 +552,18 @@ namespace ContainerBenchmark
             {
                 suiteName = "ContainerBenchmark",
                 unityVersion = Application.unityVersion,
+                unityRevision = BenchmarkEnvironmentContract.RecordedUnityRevision,
                 startedUtc = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture),
                 jobEnabled = Selection.EnableJob,
                 platform = Application.platform.ToString(),
                 scriptingBackend = ScriptingBackendLabel(),
                 buildKind = Application.isEditor ? "Editor" : (Debug.isDebugBuild ? "Development Player" : "Release Player"),
-                collectionsManifestRequest = "2.5.7",
-                collectionsResolvedVersion = "6.5.0",
-                burstResolvedVersion = "1.8.30",
-                mathematicsResolvedVersion = "1.4.0",
-                packagesLockSha256 = "5496DF13106EE5FE221DD76C28BE21048FA43163AF6C657FF034EE7FE2B779E6",
+                collectionsManifestRequest = BenchmarkEnvironmentContract.CollectionsManifestVersion,
+                collectionsResolvedVersion = BenchmarkEnvironmentContract.CollectionsResolvedVersion,
+                collectionsResolvedSource = BenchmarkEnvironmentContract.RecordedCollectionsResolvedSource,
+                burstResolvedVersion = BenchmarkEnvironmentContract.BurstResolvedVersion,
+                mathematicsResolvedVersion = BenchmarkEnvironmentContract.MathematicsResolvedVersion,
+                packagesLockSha256 = BenchmarkEnvironmentContract.PackagesLockSha256,
                 runMode = IsAutoRun
                     ? (_benchmarkSmoke ? "Smoke" : (IsNamedBenchmarkShard(_benchmarkShard) ? "Shard" : "Full"))
                     : "InteractiveSelection",
@@ -699,10 +712,49 @@ namespace ContainerBenchmark
 
         /// <summary>
         /// 单用例完整流程：预热 1 次（单独记录）+ 稳态采样 10 次。
-        /// 每次采样严格按契约顺序：Setup → [计时区] RunOnePass → [计时结束] → Validate → Teardown。
+        /// 普通/可变用例每 pass 执行 Setup → Run → Validate → Teardown；显式实现
+        /// IReusableReadOnlyBenchmarkCase 的用例由 session 只构建/释放一次 fixture，
+        /// 每 pass 在计时外 ResetForPass 后仍执行完全相同的 Run 与 Validate。
         /// 结果通过 CaseRunOutcome 回传；校验或异常失败均已记录。
         /// </summary>
         private IEnumerator RunCaseCoroutine(IBenchmarkCase c, CaseRunOutcome outcome)
+        {
+            var session = new BenchmarkCaseSession(c);
+            IEnumerator samples = RunCaseSamplesCoroutine(c, outcome, session);
+            try
+            {
+                while (samples.MoveNext())
+                {
+                    yield return samples.Current;
+                }
+            }
+            finally
+            {
+                (samples as IDisposable)?.Dispose();
+                if (!session.TryRelease(out Exception releaseException))
+                {
+                    outcome.succeeded = false;
+                    string failure = "fixture 释放异常：" + releaseException.Message;
+                    BenchmarkCaseResult lastResult = Suite?.results?
+                        .LastOrDefault(result => result.id == c.Id && !result.isWarmup);
+                    if (lastResult != null)
+                    {
+                        lastResult.validated = false;
+                        lastResult.validateDesc = string.IsNullOrWhiteSpace(lastResult.validateDesc)
+                            ? failure
+                            : lastResult.validateDesc + " | " + failure;
+                    }
+                    else if (Suite != null)
+                    {
+                        Suite.results.Add(CreateFailureResult(c, failure));
+                    }
+                    LogError($"[失败] {c.Id}: {failure}");
+                }
+            }
+        }
+
+        private IEnumerator RunCaseSamplesCoroutine(
+            IBenchmarkCase c, CaseRunOutcome outcome, BenchmarkCaseSession session)
         {
             // ---- 预热：1 次，不计入统计，但数据单独记录 ----
             PassSample warmup = default;
@@ -711,7 +763,7 @@ namespace ContainerBenchmark
             Exception passException = null;
             try
             {
-                warmup = ExecutePass(c, _measureGc, out warmupValid, out warmupDesc);
+                warmup = session.Execute(_measureGc, out warmupValid, out warmupDesc);
             }
             catch (Exception e)
             {
@@ -768,7 +820,7 @@ namespace ContainerBenchmark
                 passException = null;
                 try
                 {
-                    s = ExecutePass(c, _measureGc, out passValid, out passDesc);
+                    s = session.Execute(_measureGc, out passValid, out passDesc);
                 }
                 catch (Exception e)
                 {
@@ -810,8 +862,48 @@ namespace ContainerBenchmark
             outcome.succeeded = valid;
         }
 
-        /// <summary>单次采样（严格契约顺序，计时区只含 RunOnePass）。</summary>
+        /// <summary>普通/可变用例的单次采样；计时区只含 RunOnePass。</summary>
         private static PassSample ExecutePass(
+            IBenchmarkCase c, bool measureGc, out bool valid, out string desc)
+        {
+            PassSample sample = default;
+            Exception primaryException = null;
+            try
+            {
+                c.Setup();
+                sample = ExecuteMeasuredPass(c, measureGc, out valid, out desc);
+            }
+            catch (Exception e)
+            {
+                primaryException = e;
+                valid = false;
+                desc = string.Empty;
+            }
+
+            try
+            {
+                // Setup 自身部分失败、Run/Validate 抛异常时也必须尝试释放 Native 资源。
+                c.Teardown();
+            }
+            catch (Exception teardownException)
+            {
+                if (primaryException != null)
+                {
+                    throw new AggregateException(
+                        "用例执行与 fixture 释放均发生异常", primaryException, teardownException);
+                }
+                throw;
+            }
+
+            if (primaryException != null)
+            {
+                ExceptionDispatchInfo.Capture(primaryException).Throw();
+            }
+            return sample;
+        }
+
+        /// <summary>共享计时核心；调用方负责在进入前准备/复位并在离开后释放 fixture。</summary>
+        private static PassSample ExecuteMeasuredPass(
             IBenchmarkCase c, bool measureGc, out bool valid, out string desc)
         {
             valid = false;
@@ -820,7 +912,6 @@ namespace ContainerBenchmark
             bool gcRecorderCreated = false;
             try
             {
-                c.Setup();
                 var sw = new Stopwatch();
                 // ProfilerRecorder 的 CurrentValue 可在帧内立即读取；前后差值只覆盖 RunOnePass。
                 // 是否可用于目标 Release Player 由每次运行开始时的真实分配校准判定。
@@ -852,8 +943,6 @@ namespace ContainerBenchmark
                     gcRecorder.Stop();
                     gcRecorder.Dispose();
                 }
-                // Setup 自身部分失败、Run/Validate 抛异常时也必须尝试释放 Native 资源。
-                c.Teardown();
             }
         }
 
@@ -1296,6 +1385,62 @@ namespace ContainerBenchmark
         private sealed class CaseRunOutcome
         {
             public bool succeeded;
+        }
+
+        /// <summary>
+        /// 封装普通逐 pass fixture 与显式只读复用 fixture 的两种生命周期。
+        /// 主协程只依赖 Execute/TryRelease，小接口隐藏 allocator 与异常清理细节。
+        /// </summary>
+        private sealed class BenchmarkCaseSession
+        {
+            private readonly IBenchmarkCase _case;
+            private readonly IReusableReadOnlyBenchmarkCase _reusable;
+            private bool _setupAttempted;
+            private bool _released;
+
+            public BenchmarkCaseSession(IBenchmarkCase benchmarkCase)
+            {
+                _case = benchmarkCase ?? throw new ArgumentNullException(nameof(benchmarkCase));
+                _reusable = benchmarkCase as IReusableReadOnlyBenchmarkCase;
+            }
+
+            public PassSample Execute(bool measureGc, out bool valid, out string desc)
+            {
+                if (_reusable == null)
+                {
+                    return ExecutePass(_case, measureGc, out valid, out desc);
+                }
+
+                if (!_setupAttempted)
+                {
+                    // 先标记再调用；即使 Setup 部分失败，TryRelease 仍会尝试清理已创建资源。
+                    _setupAttempted = true;
+                    _case.Setup();
+                }
+                _reusable.ResetForPass();
+                return ExecuteMeasuredPass(_case, measureGc, out valid, out desc);
+            }
+
+            public bool TryRelease(out Exception exception)
+            {
+                exception = null;
+                if (_released || _reusable == null || !_setupAttempted)
+                {
+                    return true;
+                }
+
+                _released = true;
+                try
+                {
+                    _case.Teardown();
+                    return true;
+                }
+                catch (Exception e)
+                {
+                    exception = e;
+                    return false;
+                }
+            }
         }
     }
 }

@@ -340,12 +340,14 @@ footer { color:#7a7a8a; font-size:12px; margin-top:20px; }
       : ((DATA.measurementChannel === 'TimingOnly' || DATA.timingOnlyRequested || DATA.gcUnavailableReason) ? 'N/A' : '失败');
     var packageText = 'Collections manifest ' + esc(DATA.collectionsManifestRequest || '未记录') +
       ' → resolved ' + esc(DATA.collectionsResolvedVersion || '未记录') +
+      ' (' + esc(DATA.collectionsResolvedSource || '未记录来源') + ')' +
       ' | Burst ' + esc(DATA.burstResolvedVersion || '未记录') +
       ' | Mathematics ' + esc(DATA.mathematicsResolvedVersion || '未记录') +
       ' | packages-lock SHA256 ' + esc(DATA.packagesLockSha256 ? DATA.packagesLockSha256.substring(0, 12) + '…' : '未记录');
     document.getElementById('metaInfo').innerHTML =
       '套件: ' + esc(DATA.suiteName) +
       ' | Unity: ' + esc(DATA.unityVersion) +
+      ' (' + esc(DATA.unityRevision || '未记录 revision') + ')' +
       ' | 平台: ' + esc(DATA.platform || '未记录') +
       ' | 后端: ' + esc(DATA.scriptingBackend || '未记录') +
       ' | 构建: ' + esc(DATA.buildKind || '未记录') +

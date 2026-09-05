@@ -618,7 +618,7 @@ namespace ContainerBenchmark
 
     // ==================== A7 for 索引遍历累加 ====================
 
-    public sealed class ListForSumCase : BenchmarkCaseBase
+    public sealed class ListForSumCase : ReusableReadOnlyBenchmarkCaseBase
     {
         private List<int> _list;
 
@@ -658,7 +658,7 @@ namespace ContainerBenchmark
         }
     }
 
-    public sealed class NativeListForSumCase : BenchmarkCaseBase
+    public sealed class NativeListForSumCase : ReusableReadOnlyBenchmarkCaseBase
     {
         private NativeList<int> _list;
 
@@ -671,7 +671,7 @@ namespace ContainerBenchmark
         public override void Setup()
         {
             Checksum.Reset();
-            _list = new NativeList<int>(Scale, Allocator.TempJob);
+            _list = new NativeList<int>(Scale, Allocator.Persistent);
             for (int i = 0; i < Scale; i++)
                 _list.Add(i);
         }
@@ -701,11 +701,11 @@ namespace ContainerBenchmark
 
     // ==================== A8 Job 遍历求和 ====================
 
-    public sealed class ListJobSumCase : BenchmarkCaseBase
+    public sealed class ListJobSumCase : ReusableReadOnlyBenchmarkCaseBase
     {
         private List<int> _list;
         private NativeArray<int> _input;
-        private NativeList<long> _result;
+        private NativeArray<long> _result;
 
         public ListJobSumCase(int scale)
             : base("List", false, ContainerFamily.List, "A8", "Job遍历求和", true,
@@ -719,9 +719,14 @@ namespace ContainerBenchmark
             _list = new List<int>(Scale);
             for (int i = 0; i < Scale; i++)
                 _list.Add(i);
-            _input = new NativeArray<int>(Scale, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
-            _result = new NativeList<long>(1, Allocator.TempJob);
-            _result.Add(0);
+            _input = new NativeArray<int>(Scale, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+            _result = new NativeArray<long>(1, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+        }
+
+        public override void ResetForPass()
+        {
+            base.ResetForPass();
+            _result[0] = 0L;
         }
 
         public override void RunOnePass()
@@ -730,7 +735,6 @@ namespace ContainerBenchmark
             for (int i = 0; i < _list.Count; i++)
                 _input[i] = _list[i];
 
-            _result[0] = 0;
             new SumIntJob { Input = _input, Result = _result }
                 .Schedule().Complete();
             Checksum.AddLong(_result[0]);
@@ -754,10 +758,10 @@ namespace ContainerBenchmark
         }
     }
 
-    public sealed class NativeListJobSumCase : BenchmarkCaseBase
+    public sealed class NativeListJobSumCase : ReusableReadOnlyBenchmarkCaseBase
     {
         private NativeList<int> _list;
-        private NativeList<long> _result;
+        private NativeArray<long> _result;
 
         public NativeListJobSumCase(int scale)
             : base("NativeList", true, ContainerFamily.List, "A8", "Job遍历求和", true,
@@ -768,17 +772,21 @@ namespace ContainerBenchmark
         public override void Setup()
         {
             Checksum.Reset();
-            _list = new NativeList<int>(Scale, Allocator.TempJob);
+            _list = new NativeList<int>(Scale, Allocator.Persistent);
             for (int i = 0; i < Scale; i++)
                 _list.Add(i);
-            _result = new NativeList<long>(1, Allocator.TempJob);
-            _result.Add(0);
+            _result = new NativeArray<long>(1, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+        }
+
+        public override void ResetForPass()
+        {
+            base.ResetForPass();
+            _result[0] = 0L;
         }
 
         public override void RunOnePass()
         {
             // Native 容器零拷贝：长度在调度前已固定，直接 AsArray，避免不必要的 deferred patch。
-            _result[0] = 0;
             new SumIntJob { Input = _list.AsArray(), Result = _result }
                 .Schedule().Complete();
             Checksum.AddLong(_result[0]);

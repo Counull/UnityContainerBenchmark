@@ -152,7 +152,7 @@ namespace ContainerBenchmark
 
     // ==================== E4 foreach 遍历 ====================
 
-    public sealed class LinkedListTraverseCase : BenchmarkCaseBase
+    public sealed class LinkedListTraverseCase : ReusableReadOnlyBenchmarkCaseBase
     {
         private LinkedList<int> _list;
 

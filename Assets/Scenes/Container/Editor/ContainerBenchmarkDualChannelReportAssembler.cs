@@ -19,10 +19,13 @@ public static class ContainerBenchmarkDualChannelReportAssembler
 {
     private const string TimingRole = "ReleaseTiming";
     private const string GcRole = "DevelopmentGc";
-    private const string RequestedCollections = "2.5.7";
-    private const string ResolvedCollections = "6.5.0";
-    private const string ResolvedBurst = "1.8.30";
-    private const string ResolvedMathematics = "1.4.0";
+    private const string ExpectedUnityVersion = BenchmarkEnvironmentContract.UnityVersion;
+    private const string ExpectedUnityRevision = BenchmarkEnvironmentContract.UnityRevision;
+    private const string RequestedCollections = BenchmarkEnvironmentContract.CollectionsManifestVersion;
+    private const string ResolvedCollections = BenchmarkEnvironmentContract.CollectionsResolvedVersion;
+    private const string ResolvedCollectionsSource = BenchmarkEnvironmentContract.CollectionsResolvedSource;
+    private const string ResolvedBurst = BenchmarkEnvironmentContract.BurstResolvedVersion;
+    private const string ResolvedMathematics = BenchmarkEnvironmentContract.MathematicsResolvedVersion;
     private const string FormalRunMode = "Shard";
     private const string FormalSelectionPolicy = "practical-capped-v2";
     private const int ExpectedCaseCount = 928;
@@ -408,6 +411,10 @@ public static class ContainerBenchmarkDualChannelReportAssembler
         {
             AddError(diagnostics, label + " buildGuid 为空");
         }
+        RequireEqual(suite.unityVersion, ExpectedUnityVersion,
+            label + " Unity version", diagnostics);
+        RequireEqual(suite.unityRevision, ExpectedUnityRevision,
+            label + " Unity revision", diagnostics);
         if (document.role == TimingRole)
         {
             if (!string.Equals(suite.buildKind, "Release Player", StringComparison.Ordinal)
@@ -509,6 +516,8 @@ public static class ContainerBenchmarkDualChannelReportAssembler
             label + " manifest Collections", diagnostics);
         RequireEqual(suite.collectionsResolvedVersion, ResolvedCollections,
             label + " resolved Collections", diagnostics);
+        RequireEqual(suite.collectionsResolvedSource, ResolvedCollectionsSource,
+            label + " resolved Collections source", diagnostics);
         RequireEqual(suite.burstResolvedVersion, ResolvedBurst,
             label + " resolved Burst", diagnostics);
         RequireEqual(suite.mathematicsResolvedVersion, ResolvedMathematics,
@@ -553,6 +562,8 @@ public static class ContainerBenchmarkDualChannelReportAssembler
             BenchmarkSuiteResult suite = document.suite;
             string label = document.role + "/" + document.shard;
             CompareField(baseline.unityVersion, suite.unityVersion, label + " Unity", diagnostics);
+            CompareField(baseline.unityRevision, suite.unityRevision,
+                label + " Unity revision", diagnostics);
             CompareField(baseline.platform, suite.platform, label + " platform", diagnostics);
             CompareField(baseline.scriptingBackend, suite.scriptingBackend, label + " backend", diagnostics);
             CompareField(baseline.selectionPolicy, suite.selectionPolicy, label + " selectionPolicy", diagnostics);
@@ -570,6 +581,8 @@ public static class ContainerBenchmarkDualChannelReportAssembler
                 suite.collectionsManifestRequest, label + " manifest Collections", diagnostics);
             CompareField(baseline.collectionsResolvedVersion,
                 suite.collectionsResolvedVersion, label + " resolved Collections", diagnostics);
+            CompareField(baseline.collectionsResolvedSource,
+                suite.collectionsResolvedSource, label + " resolved Collections source", diagnostics);
             CompareField(baseline.burstResolvedVersion,
                 suite.burstResolvedVersion, label + " Burst", diagnostics);
             CompareField(baseline.mathematicsResolvedVersion,
@@ -676,6 +689,7 @@ public static class ContainerBenchmarkDualChannelReportAssembler
         {
             suiteName = "ContainerBenchmark Dual-Channel Formal Report",
             unityVersion = baseline?.unityVersion,
+            unityRevision = baseline?.unityRevision,
             startedUtc = MinIso(documents.Select(x => x.suite.startedUtc)),
             endedUtc = MaxIso(documents.Select(x => x.suite.endedUtc)),
             jobEnabled = true,
@@ -684,6 +698,7 @@ public static class ContainerBenchmarkDualChannelReportAssembler
             buildKind = "Release timing + Development GC",
             collectionsManifestRequest = baseline?.collectionsManifestRequest,
             collectionsResolvedVersion = baseline?.collectionsResolvedVersion,
+            collectionsResolvedSource = baseline?.collectionsResolvedSource,
             burstResolvedVersion = baseline?.burstResolvedVersion,
             mathematicsResolvedVersion = baseline?.mathematicsResolvedVersion,
             packagesLockSha256 = baseline?.packagesLockSha256,

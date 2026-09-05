@@ -3,7 +3,9 @@ namespace ContainerBenchmark
 {
     /// <summary>
     /// 测试用例统一接口（阶段 2 主控依赖的唯一入口）。
-    /// 调用顺序契约：Setup() → [计时区] RunOnePass() → [计时结束] → Validate(out desc) → Teardown()。
+    /// 默认调用顺序契约：Setup() → [计时区] RunOnePass() → [计时结束] → Validate(out desc) → Teardown()。
+    /// 显式实现 IReusableReadOnlyBenchmarkCase 时，Setup/Teardown 提升为整个 1+10 pass 序列各一次，
+    /// 每个 pass 仍会在计时外 ResetForPass，并执行 RunOnePass → Validate。
     /// 计时由主控负责，用例内不做任何计时。
     /// </summary>
     public interface IBenchmarkCase
@@ -41,13 +43,13 @@ namespace ContainerBenchmark
         /// <summary>是否 Native 容器。</summary>
         bool IsNative { get; }
 
-        /// <summary>是否可执行（false 表示本组合无形态，如 NativeQueue 遍历）。</summary>
+        /// <summary>是否可执行（false 仅用于当前平台或实现明确不存在的可选形态）。</summary>
         bool IsSupported { get; }
 
         /// <summary>不支持原因（IsSupported == false 时有效）。</summary>
         string UnsupportedReason { get; }
 
-        /// <summary>语义差异标注（字符串专项：引用类型 vs 定长 64 字节、哈希算法不同等）。</summary>
+        /// <summary>语义差异标注（字符串语义、容量/存储布局、可选能力等不可完全对称因素）。</summary>
         string SemanticNote { get; }
 
         /// <summary>防优化累积器（采样后由主控调用 Escape()）。</summary>
@@ -56,7 +58,7 @@ namespace ContainerBenchmark
         /// <summary>计时区内实际执行的原子操作数；通常为 N，混合入出队/Push+Pop 为 2N。</summary>
         long TimedOperationCount { get; }
 
-        /// <summary>准备状态：重建容器与数据，预分配容量。计时区外调用。</summary>
+        /// <summary>准备状态：重建容器与数据，按可用 API 预分配容量。默认每 pass 调用；可复用只读 fixture 每个 session 调用一次。始终位于计时区外。</summary>
         void Setup();
 
         /// <summary>纯操作循环（Job 场景含调度 + Complete），不做校验/统计/日志。计时区内调用。</summary>
@@ -65,8 +67,19 @@ namespace ContainerBenchmark
         /// <summary>计时区外、Teardown 前调用：按契约校验式检查结果。</summary>
         bool Validate(out string desc);
 
-        /// <summary>释放资源（Native 容器必须 finally { Dispose }，任何路径不得泄漏）。</summary>
+        /// <summary>释放资源（默认每 pass；可复用只读 fixture 每个 session 一次；Native 容器在任何路径均不得泄漏）。</summary>
         void Teardown();
+    }
+
+    /// <summary>
+    /// 可在同一预热/采样序列中复用已构建 fixture 的只读用例能力。
+    /// 主控仍在每个 pass 的计时区外调用 ResetForPass，并逐次执行校验；
+    /// Setup/Teardown 则提升为整个用例序列各一次。实现者必须保证 RunOnePass
+    /// 不改变被测容器的可观察状态，且跨帧 Native fixture 使用 Persistent 分配器。
+    /// </summary>
+    public interface IReusableReadOnlyBenchmarkCase
+    {
+        void ResetForPass();
     }
 
     /// <summary>
@@ -114,6 +127,28 @@ namespace ContainerBenchmark
         public abstract void RunOnePass();
         public abstract bool Validate(out string desc);
         public abstract void Teardown();
+    }
+
+    /// <summary>
+    /// 只读 fixture 复用用例的公共基类。把每 pass 的可变观测状态收敛为 Checksum，
+    /// 昂贵容器构建仍由具体 Setup 实现，最终释放仍由具体 Teardown 实现。
+    /// </summary>
+    public abstract class ReusableReadOnlyBenchmarkCaseBase : BenchmarkCaseBase,
+        IReusableReadOnlyBenchmarkCase
+    {
+        protected ReusableReadOnlyBenchmarkCaseBase(
+            string containerName, bool isNative, ContainerFamily family,
+            string operationCode, string operationName, bool supportsJob,
+            int scale, BenchmarkValueType valueType, CollisionProfile collision, bool useJob)
+            : base(containerName, isNative, family, operationCode, operationName, supportsJob,
+                scale, valueType, collision, useJob)
+        {
+        }
+
+        public virtual void ResetForPass()
+        {
+            Checksum.Reset();
+        }
     }
 
     /// <summary>

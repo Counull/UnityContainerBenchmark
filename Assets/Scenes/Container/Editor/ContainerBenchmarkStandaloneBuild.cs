@@ -1,8 +1,11 @@
 using System;
 using System.IO;
+using System.Security.Cryptography;
+using ContainerBenchmark;
 using UnityEditor;
 using UnityEditor.Build;
 using UnityEditor.Build.Reporting;
+using UnityEditorInternal;
 using UnityEngine;
 
 public static class ContainerBenchmarkStandaloneBuild
@@ -41,6 +44,7 @@ public static class ContainerBenchmarkStandaloneBuild
 
     private static void BuildPlayer(string output, bool development)
     {
+        ValidateEvidenceEnvironment();
         if (AssetDatabase.LoadAssetAtPath<SceneAsset>(ScenePath) == null)
             throw new FileNotFoundException("Container benchmark scene is missing.", ScenePath);
         if (!string.Equals(Path.GetExtension(output), ".exe", StringComparison.OrdinalIgnoreCase))
@@ -78,6 +82,10 @@ public static class ContainerBenchmarkStandaloneBuild
                 locationPathName = output,
                 target = BuildTarget.StandaloneWindows64,
                 options = options,
+                extraScriptingDefines = new[]
+                {
+                    BenchmarkEnvironmentContract.VerifiedScriptingDefine,
+                },
             });
 
             BuildSummary summary = report.summary;
@@ -99,6 +107,50 @@ public static class ContainerBenchmarkStandaloneBuild
             PlayerSettings.runInBackground = oldRunInBackground;
             EditorBuildSettings.scenes = oldScenes;
         }
+    }
+
+    private static void ValidateEvidenceEnvironment()
+    {
+        string fullUnityVersion = InternalEditorUtility.GetFullUnityVersion();
+        if (!string.Equals(fullUnityVersion, BenchmarkEnvironmentContract.FullUnityVersion,
+                StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Formal build requires Unity {BenchmarkEnvironmentContract.FullUnityVersion}; actual {fullUnityVersion}.");
+        }
+
+        string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+        string manifestPath = Path.Combine(projectRoot, "Packages", "manifest.json");
+        string lockPath = Path.Combine(projectRoot, "Packages", "packages-lock.json");
+        if (!File.Exists(manifestPath) || !File.Exists(lockPath))
+            throw new FileNotFoundException("Formal build requires manifest.json and packages-lock.json.");
+
+        string manifestText = File.ReadAllText(manifestPath);
+        string expectedManifestEntry =
+            $"\"com.unity.collections\": \"{BenchmarkEnvironmentContract.CollectionsManifestVersion}\"";
+        if (!manifestText.Contains(expectedManifestEntry))
+        {
+            throw new InvalidOperationException(
+                $"manifest.json must request Collections {BenchmarkEnvironmentContract.CollectionsManifestVersion}.");
+        }
+
+        string lockSha256;
+        using (SHA256 sha = SHA256.Create())
+        using (FileStream stream = File.OpenRead(lockPath))
+        {
+            lockSha256 = BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", string.Empty);
+        }
+        if (!string.Equals(lockSha256, BenchmarkEnvironmentContract.PackagesLockSha256,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"packages-lock SHA256 mismatch: expected {BenchmarkEnvironmentContract.PackagesLockSha256}, actual {lockSha256}.");
+        }
+
+        Debug.Log(
+            $"[ContainerBenchmarkBuild] VERIFIED_ENV unity={fullUnityVersion} "
+            + $"collections={BenchmarkEnvironmentContract.CollectionsResolvedVersion}/"
+            + $"{BenchmarkEnvironmentContract.CollectionsResolvedSource} lockSha256={lockSha256}");
     }
 
     private static string ReadRequiredOption(string[] args, string option)
