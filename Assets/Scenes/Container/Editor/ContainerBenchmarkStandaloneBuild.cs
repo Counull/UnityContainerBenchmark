@@ -1,12 +1,15 @@
 using System;
 using System.IO;
 using System.Security.Cryptography;
+using System.Text.Json;
 using ContainerBenchmark;
 using UnityEditor;
 using UnityEditor.Build;
 using UnityEditor.Build.Reporting;
 using UnityEditorInternal;
 using UnityEngine;
+using PackageManagerInfo = UnityEditor.PackageManager.PackageInfo;
+using PackageManagerSource = UnityEditor.PackageManager.PackageSource;
 
 public static class ContainerBenchmarkStandaloneBuild
 {
@@ -125,13 +128,49 @@ public static class ContainerBenchmarkStandaloneBuild
         if (!File.Exists(manifestPath) || !File.Exists(lockPath))
             throw new FileNotFoundException("Formal build requires manifest.json and packages-lock.json.");
 
-        string manifestText = File.ReadAllText(manifestPath);
-        string expectedManifestEntry =
-            $"\"com.unity.collections\": \"{BenchmarkEnvironmentContract.CollectionsManifestVersion}\"";
-        if (!manifestText.Contains(expectedManifestEntry))
+        using (JsonDocument manifest = JsonDocument.Parse(File.ReadAllText(manifestPath)))
+        {
+            if (!manifest.RootElement.TryGetProperty("dependencies", out JsonElement dependencies)
+                || !dependencies.TryGetProperty("com.unity.collections", out JsonElement collectionsRequest)
+                || !string.Equals(collectionsRequest.GetString(),
+                    BenchmarkEnvironmentContract.CollectionsManifestVersion, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"manifest.json must directly request Collections {BenchmarkEnvironmentContract.CollectionsManifestVersion}.");
+            }
+        }
+
+        using (JsonDocument packageLock = JsonDocument.Parse(File.ReadAllText(lockPath)))
+        {
+            bool lockEntryValid = packageLock.RootElement.TryGetProperty(
+                                      "dependencies", out JsonElement dependencies)
+                                  && dependencies.TryGetProperty(
+                                      "com.unity.collections", out JsonElement collections)
+                                  && collections.TryGetProperty("version", out JsonElement version)
+                                  && collections.TryGetProperty("source", out JsonElement source)
+                                  && string.Equals(version.GetString(),
+                                      BenchmarkEnvironmentContract.CollectionsResolvedVersion,
+                                      StringComparison.Ordinal)
+                                  && string.Equals(source.GetString(),
+                                      BenchmarkEnvironmentContract.CollectionsResolvedSource,
+                                      StringComparison.Ordinal);
+            if (!lockEntryValid)
+            {
+                throw new InvalidOperationException(
+                    "packages-lock.json must resolve Collections 6.5.0 from builtin.");
+            }
+        }
+
+        PackageManagerInfo collectionsPackage =
+            PackageManagerInfo.FindForPackageName("com.unity.collections");
+        if (collectionsPackage == null
+            || !collectionsPackage.isDirectDependency
+            || !string.Equals(collectionsPackage.version,
+                BenchmarkEnvironmentContract.CollectionsResolvedVersion, StringComparison.Ordinal)
+            || collectionsPackage.source != PackageManagerSource.BuiltIn)
         {
             throw new InvalidOperationException(
-                $"manifest.json must request Collections {BenchmarkEnvironmentContract.CollectionsManifestVersion}.");
+                "Unity Package Manager must register Collections 6.5.0 as a direct builtin dependency.");
         }
 
         string lockSha256;
